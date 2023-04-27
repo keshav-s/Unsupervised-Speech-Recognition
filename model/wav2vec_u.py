@@ -45,7 +45,7 @@ class Wav2vec_UConfig(FairseqDataclass):
     discriminator_spectral_norm: bool = False
     discriminator_weight_norm: bool = False
 
-    generator_kernel: int = 4
+    generator_kernel: int = 3
     generator_dilation: int = 1
     generator_stride: int = 1
     generator_bias: bool = False
@@ -77,10 +77,20 @@ class ResNet1dBlock(nn.Module):
         padding = kernel_size // 2
 
         self.conv = nn.Sequential(
-            nn.Conv1d(in_chan, out_chan, kernel_size, stride, padding, bias),
+            nn.Conv1d(in_chan, out_chan, 
+                kernel_size=kernel_size, 
+                stride=stride,
+                padding=padding,
+                bias=bias
+            ),
             nn.BatchNorm1d(out_chan),
             nn.GELU(),
-            nn.Conv1d(out_chan, out_chan, kernel_size, 1, padding, bias),
+            nn.Conv1d(out_chan, out_chan, 
+                kernel_size=kernel_size, 
+                stride=1,
+                padding=padding,
+                bias=bias
+            ),
             nn.BatchNorm1d(out_chan)
         )
         if stride != 1 or in_chan != out_chan:
