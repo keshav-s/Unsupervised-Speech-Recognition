@@ -70,6 +70,38 @@ class Wav2vec_UConfig(FairseqDataclass):
     segmentation: SegmentationConfig = SegmentationConfig()
 
 
+class ResNet1dBlock(nn.Module):
+    def __init__(self, in_chan, out_chan, kernel_size=3, stride = 1, bias=False):
+        super(ResNet1dBlock, self).__init__()
+        # self.conv = nn.Conv1d(in_chan, out_chan, kernel_size=3, stride=stride, padding=1, bias=False)
+        padding = kernel_size // 2
+
+        self.conv = nn.Sequential(
+            nn.Conv1d(in_chan, out_chan, kernel_size, stride, padding, bias),
+            nn.BatchNorm1d(out_chan),
+            nn.GELU(),
+            nn.Conv1d(out_chan, out_chan, kernel_size, 1, padding, bias),
+            nn.BatchNorm1d(out_chan)
+        )
+        if stride != 1 or in_chan != out_chan:
+            self.ds = nn.Sequential( # downsample/resize residual
+                nn.Conv1d(in_chan, out_chan, kernel_size=1, stride=stride),
+                nn.BatchNorm1d(out_chan),
+            )
+        else:
+            self.ds = None
+        self.act = nn.GELU()
+        
+    def forward(self, x):
+        residual = x
+        out = self.conv(x)
+        if self.ds is not None:
+            residual = self.ds(x)
+
+        out += residual
+        out = self.act(out)
+        return out
+
 class Segmenter(nn.Module):
     cfg: SegmentationConfig
 
@@ -222,17 +254,20 @@ class Generator(nn.Module):
         self.stride = cfg.generator_stride
         self.dropout = nn.Dropout(cfg.generator_dropout)
 
-        padding = cfg.generator_kernel // 2
+        # padding = cfg.generator_kernel // 2
         self.proj = nn.Sequential(
             TransposeLast(),
-            # Call nn.Conv1d with parameters input_dim, output_dim, take the generator kernel size, stride, dilation, bias and padding
-            nn.Conv1d(input_dim,
-                      output_dim, 
-                      kernel_size=cfg.generator_kernel, 
-                      stride=cfg.generator_stride, 
-                      padding=padding, 
-                      dilation=cfg.generator_dilation, 
-                      bias=cfg.generator_bias
+            ResNet1dBlock(input_dim, 
+                          output_dim, 
+                          kernel_size=cfg.generator_kernel,
+                          stride=cfg.generator_stride,
+                          bias=cfg.generator_bias
+            ),
+            ResNet1dBlock(output_dim, 
+                          output_dim, 
+                          kernel_size=cfg.generator_kernel,
+                          stride=cfg.generator_stride,
+                          bias=cfg.generator_bias
             ),
             TransposeLast(),
         )
