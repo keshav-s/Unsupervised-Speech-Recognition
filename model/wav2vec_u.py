@@ -38,7 +38,7 @@ class Wav2vec_UConfig(FairseqDataclass):
     discriminator_dim: int = 384
     discriminator_causal: bool = True
     discriminator_linear_emb: bool = False
-    discriminator_depth: int = 2
+    discriminator_depth: int = 4
     discriminator_max_pool: bool = False
     discriminator_act_after_linear: bool = False
     discriminator_dropout: float = 0.3
@@ -71,10 +71,11 @@ class Wav2vec_UConfig(FairseqDataclass):
 
 
 class ResNet1dBlock(nn.Module):
-    def __init__(self, in_chan, out_chan, kernel_size=3, stride = 1, bias=False):
+    def __init__(self, in_chan, out_chan, kernel_size=3, stride = 1, bias=False, apply_final_act=True):
         super(ResNet1dBlock, self).__init__()
         # self.conv = nn.Conv1d(in_chan, out_chan, kernel_size=3, stride=stride, padding=1, bias=False)
         padding = kernel_size // 2
+        self.apply_final_act = apply_final_act
 
         self.conv = nn.Sequential(
             nn.Conv1d(in_chan, out_chan, kernel_size, stride, padding, bias),
@@ -99,8 +100,7 @@ class ResNet1dBlock(nn.Module):
             residual = self.ds(x)
 
         out += residual
-        out = self.act(out)
-        return out
+        return self.act(out) if self.apply_final_act else out
 
 class Segmenter(nn.Module):
     cfg: SegmentationConfig
@@ -195,17 +195,32 @@ class Discriminator(nn.Module):
             elif cfg.discriminator_weight_norm:
                 conv = nn.utils.weight_norm(conv)
             return conv
+        
+        def make_resnet(in_d, out_d, k, p=0, has_dilation=False):
+            conv = ResNet1dBlock(
+                in_d,
+                out_d,
+                kernel_size=k,
+                padding=p,
+                dilation=dilation if has_dilation else 1,
+                apply_final_act=False,
+            )
+            if cfg.discriminator_spectral_norm:
+                conv = nn.utils.spectral_norm(conv)
+            elif cfg.discriminator_weight_norm:
+                conv = nn.utils.weight_norm(conv)
+            return conv
 
         inner_net = [
             nn.Sequential(
-                make_conv(inner_dim, inner_dim, kernel, padding),
+                make_resnet(inner_dim, inner_dim, kernel, padding),
                 SamePad(kernel_size=kernel, causal=cfg.discriminator_causal),
                 nn.Dropout(cfg.discriminator_dropout),
                 nn.GELU(),
             )
             for _ in range(cfg.discriminator_depth - 1)
         ] + [
-            make_conv(inner_dim, 1, kernel, padding, has_dilation=False),
+            make_resnet(inner_dim, 1, kernel, padding, has_dilation=False),
             SamePad(kernel_size=kernel, causal=cfg.discriminator_causal),
         ]
 
@@ -254,21 +269,18 @@ class Generator(nn.Module):
         self.stride = cfg.generator_stride
         self.dropout = nn.Dropout(cfg.generator_dropout)
 
-        # padding = cfg.generator_kernel // 2
+        padding = cfg.generator_kernel // 2
         self.proj = nn.Sequential(
             TransposeLast(),
-            ResNet1dBlock(input_dim, 
-                          output_dim, 
-                          kernel_size=cfg.generator_kernel,
-                          stride=cfg.generator_stride,
-                          bias=cfg.generator_bias
-            ),
-            ResNet1dBlock(output_dim, 
-                          output_dim, 
-                          kernel_size=cfg.generator_kernel,
-                          stride=cfg.generator_stride,
-                          bias=cfg.generator_bias
-            ),
+            nn.Conv1d(
+            in_channels = input_dim,
+            out_channels = output_dim,
+            kernel_size=cfg.generator_kernel,
+            stride=cfg.generator_stride,
+            padding=padding,
+            dilation=cfg.generator_dilation,
+            bias=cfg.generator_bias
+            )
             TransposeLast(),
         )
 
