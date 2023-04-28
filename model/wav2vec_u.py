@@ -201,8 +201,8 @@ class Discriminator(nn.Module):
                 in_d,
                 out_d,
                 kernel_size=k,
-                padding=p,
-                dilation=dilation if has_dilation else 1,
+                # padding=p,
+                # dilation=dilation if has_dilation else 1,
                 apply_final_act=False,
             )
             if cfg.discriminator_spectral_norm:
@@ -213,14 +213,14 @@ class Discriminator(nn.Module):
 
         inner_net = [
             nn.Sequential(
-                make_resnet(inner_dim, inner_dim, kernel, padding),
+                make_conv(inner_dim, inner_dim, kernel, padding),
                 SamePad(kernel_size=kernel, causal=cfg.discriminator_causal),
                 nn.Dropout(cfg.discriminator_dropout),
                 nn.GELU(),
             )
             for _ in range(cfg.discriminator_depth - 1)
         ] + [
-            make_resnet(inner_dim, 1, kernel, padding, has_dilation=False),
+            make_conv(inner_dim, 1, kernel, padding, has_dilation=False),
             SamePad(kernel_size=kernel, causal=cfg.discriminator_causal),
         ]
 
@@ -272,15 +272,23 @@ class Generator(nn.Module):
         padding = cfg.generator_kernel // 2
         self.proj = nn.Sequential(
             TransposeLast(),
-            nn.Conv1d(
-            in_channels = input_dim,
-            out_channels = output_dim,
+            ResNet1dBlock(
+            in_chan=input_dim,
+            out_chan=output_dim,
             kernel_size=cfg.generator_kernel,
             stride=cfg.generator_stride,
-            padding=padding,
-            dilation=cfg.generator_dilation,
-            bias=cfg.generator_bias
+            bias=cfg.generator_bias,
+            apply_final_act=True
             )
+            # nn.Conv1d(
+            # in_channels = input_dim,
+            # out_channels = output_dim,
+            # kernel_size=cfg.generator_kernel,
+            # stride=cfg.generator_stride,
+            # padding=padding,
+            # dilation=cfg.generator_dilation,
+            # bias=cfg.generator_bias
+            # ),
             TransposeLast(),
         )
 
