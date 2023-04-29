@@ -38,14 +38,14 @@ class Wav2vec_UConfig(FairseqDataclass):
     discriminator_dim: int = 384
     discriminator_causal: bool = True
     discriminator_linear_emb: bool = False
-    discriminator_depth: int = 4
+    discriminator_depth: int = 2
     discriminator_max_pool: bool = False
     discriminator_act_after_linear: bool = False
     discriminator_dropout: float = 0.3
     discriminator_spectral_norm: bool = False
     discriminator_weight_norm: bool = False
 
-    generator_kernel: int = 4
+    generator_kernel: int = 5
     generator_dilation: int = 1
     generator_stride: int = 1
     generator_bias: bool = False
@@ -78,10 +78,24 @@ class ResNet1dBlock(nn.Module):
         self.apply_final_act = apply_final_act
 
         self.conv = nn.Sequential(
-            nn.Conv1d(in_chan, out_chan, kernel_size, stride, padding, bias),
+            nn.Conv1d(
+                in_channels=in_chan,
+                out_channels=out_chan,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                bias=bias
+            ),
             nn.BatchNorm1d(out_chan),
             nn.GELU(),
-            nn.Conv1d(out_chan, out_chan, kernel_size, 1, padding, bias),
+            nn.Conv1d(
+                in_channels=out_chan,
+                out_channels=out_chan,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                bias=bias
+            ),
             nn.BatchNorm1d(out_chan)
         )
         if stride != 1 or in_chan != out_chan:
@@ -259,7 +273,6 @@ class Discriminator(nn.Module):
             x = x / x_sz
         return x
 
-
 class Generator(nn.Module):
     def __init__(self, input_dim, output_dim, cfg: Wav2vec_UConfig):
         super().__init__()
@@ -272,23 +285,33 @@ class Generator(nn.Module):
         padding = cfg.generator_kernel // 2
         self.proj = nn.Sequential(
             TransposeLast(),
-            ResNet1dBlock(
-            in_chan=input_dim,
-            out_chan=output_dim,
-            kernel_size=cfg.generator_kernel,
-            stride=cfg.generator_stride,
-            bias=cfg.generator_bias,
-            apply_final_act=True
-            )
-            # nn.Conv1d(
-            # in_channels = input_dim,
-            # out_channels = output_dim,
+            # ResNet1dBlock(
+            # in_chan=input_dim,
+            # out_chan=output_dim,
             # kernel_size=cfg.generator_kernel,
             # stride=cfg.generator_stride,
-            # padding=padding,
-            # dilation=cfg.generator_dilation,
-            # bias=cfg.generator_bias
+            # bias=cfg.generator_bias,
+            # apply_final_act=True
             # ),
+            nn.Conv1d(
+            in_channels = input_dim,
+            out_channels = output_dim,
+            kernel_size=cfg.generator_kernel,
+            stride=cfg.generator_stride,
+            padding=padding,
+            dilation=cfg.generator_dilation,
+            bias=cfg.generator_bias
+            ),
+            nn.Dropout(cfg.generator_dropout),
+            nn.Conv1d(
+            in_channels = output_dim,
+            out_channels = output_dim,
+            kernel_size=cfg.generator_kernel,
+            stride=cfg.generator_stride,
+            padding=padding,
+            dilation=cfg.generator_dilation,
+            bias=cfg.generator_bias
+            ),
             TransposeLast(),
         )
 
