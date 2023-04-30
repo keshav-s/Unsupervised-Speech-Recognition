@@ -38,7 +38,7 @@ class Wav2vec_UConfig(FairseqDataclass):
     discriminator_dim: int = 384
     discriminator_causal: bool = True
     discriminator_linear_emb: bool = False
-    discriminator_depth: int = 2
+    discriminator_depth: int = 4
     discriminator_max_pool: bool = False
     discriminator_act_after_linear: bool = False
     discriminator_dropout: float = 0.3
